@@ -10,4 +10,4 @@ If you are setting up on a different machine and need to pull the repository:
 
 ## Committing
 
-To save and sync your work, simply run the `runner.py` file inside the `PE1` folder, type your commit message when prompted, and press Enter.
+To save and sync your work, simply run the `runner.py` file inside the `PE1` folder and type your commit message.
