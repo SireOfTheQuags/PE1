@@ -1,6 +1,6 @@
 # PE1
 
-## Cloning on a New or Lab Computer
+## Cloning on a strange computer
 
 If you are setting up on a different machine and need to pull the repository:
 
@@ -10,4 +10,4 @@ If you are setting up on a different machine and need to pull the repository:
 
 ## Committing
 
-To save and sync your work, simply run the `runner.py` file inside the `PE1` folder and type your commit message.
+To save and sync your work, simply run the `runner.py` file inside the `PE1` folder and type your commit message. Only do this if you're sure the code is stable and working.
