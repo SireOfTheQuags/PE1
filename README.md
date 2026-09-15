@@ -1,6 +1,6 @@
 # PE1
 
-## Downloading the code an another computer
+## Downloading the code on another computer
 
 If you are setting up on a different computer and need to pull the repository:
 
