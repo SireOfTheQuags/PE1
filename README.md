@@ -7,4 +7,4 @@ If you are setting up on a different machine and need to pull the repository:
    git clone https://github.com/SireOfTheQuags/PE1.git
 
 ## Daily Commit & Push Workflow
-To save and sync your work, double-click the `push.bat` file inside your `PE1` folder, type your commit message when prompted, and press Enter.
+To save and sync your work, double-click the `push.bat` file inside the `PE1` folder, type your commit message when prompted, and press Enter.
