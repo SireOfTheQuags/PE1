@@ -1,8 +1,4 @@
-import nidaqmx as dx
-import matplotlib.pyplot as plt
-import numpy as np
-import time
-
+from imports import *
 
 class MyDAQ:
 
