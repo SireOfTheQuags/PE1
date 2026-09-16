@@ -9,6 +9,6 @@ If you are setting up on a different computer and need to pull the repository:
 3. Run the clone command:
    `git clone https://github.com/SireOfTheQuags/PE1.git`. Inside this directory a folder 'PE1' will be created.
 
-## Committing
+## Committing to github or updating your local repository
 
-To save and sync your work, simply run the `runner.py` file inside the `PE1` folder and type your commit message. Only do this if you're sure the code is stable and working.
+To save and sync your work or update your local repository, simply run the `runner.py` file inside the `PE1` folder and choose the action you want to perform. If you're committing, type a commit message. Only do this if you're sure the code is stable and working.
