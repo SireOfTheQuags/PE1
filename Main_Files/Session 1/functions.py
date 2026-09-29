@@ -5,6 +5,7 @@ import numpy as np
 class Functions:
 
     # Takes FFT of a signal, normalizes its magnitude and turns it back into a signal.
+    # Spectral Whitening.
     @staticmethod
     def magnorm(signal):    
         FFT = np.fft.fft(signal)
@@ -13,7 +14,7 @@ class Functions:
         return np.fft.ifft(FFT/maggie).real
 
 
-    # Takes FFT of a signal, normalizes its phase and turns it back into a signal.
+    # Takes FFT of a signal, destroys its phase and turns it back into a signal.
     @staticmethod
     def phasenorm(signal):
         FFT = np.fft.fft(signal)
@@ -59,7 +60,11 @@ class Functions:
             ax.set_ylabel(ylabel)
 
             if xlim is None:
-                ax.set_xlim(0, fs / 2)
+                if scale == "semilogx":
+                    mask1 = frequencies > 0
+                    ax.set_xlim(frequencies[mask1].min(), fs / 2)
+            else:
+                    ax.set_xlim(0, fs / 2)
 
         else:
             raise ValueError("domain must be 'time' or 'frequency'")
