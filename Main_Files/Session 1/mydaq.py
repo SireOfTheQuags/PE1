@@ -1,4 +1,7 @@
-from imports import *
+import nidaqmx as dx
+import matplotlib.pyplot as plt
+import numpy as np
+import time
 
 class MyDAQ:
 
@@ -161,6 +164,18 @@ class MyDAQ:
 
         return data
 
+def magnorm(signal):
+    """
+        Turns magnitude normalised FFT back into signal
+    """    
+    FFT = np.fft.fft(signal)
+    maggie = FFT/np.abs(FFT)
+    return np.fft.ifft(maggie)
 
-# %%
-  
+def phasenorm(signal):
+    """
+        Turns phase normalised FFT back into signal
+    """   
+    FFT = np.fft.fft(signal)
+    phazy = FFT * np.exp(1j*-np.angle(FFT))
+    return np.fft.ifft(phazy)
