@@ -1,4 +1,7 @@
-from imports import *
+import nidaqmx as dx
+import matplotlib.pyplot as plt
+import numpy as np
+import time
 
 with dx.Task() as readTask:
     # Now we will add two channels to the readTask

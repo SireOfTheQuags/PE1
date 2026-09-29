@@ -1,4 +1,7 @@
-from imports import *
+import nidaqmx as dx
+import matplotlib.pyplot as plt
+import numpy as np
+import time
 
 # To combine reading and writing you will need to put the two together.
 with dx.Task('AOTask') as writeTask, dx.Task('AITask') as readTask:

@@ -1,4 +1,7 @@
-from imports import *
+import nidaqmx as dx
+import matplotlib.pyplot as plt
+import numpy as np
+import time
 
 with dx.Task() as readTask:
     # How to read a signal from an oscilloscope using myDAQ

@@ -10,17 +10,13 @@ class MyDAQ:
         self.rate = 500
 
 
-    # %%
     # Set sample rate
-
     def set_sample_rate(self, rate):
 
         self.rate = rate
 
 
-    # %%
     # Generate an arbitrary signal
-
     def generate_signal(self, voltages):
 
         with dx.Task() as writeTask:
@@ -47,9 +43,7 @@ class MyDAQ:
             writeTask.stop()
 
 
-    # %%
     # Generate a sine wave
-
     def generate_sine(
         self,
         frequency,
@@ -76,9 +70,7 @@ class MyDAQ:
         self.generate_signal(voltages)
 
 
-    # %%
     # Record voltage signal
-
     def record_voltage(self, duration):
 
         with dx.Task() as readTask:
@@ -106,9 +98,7 @@ class MyDAQ:
         return data
 
 
-    # %%
     # Get time array
-
     def get_time(self, data):
 
         t = np.arange(len(data)) / self.rate
@@ -116,9 +106,7 @@ class MyDAQ:
         return t
 
 
-    # %%
     # Write and read simultaneously
-
     def write_and_read(self, voltages):
 
         with dx.Task('AOTask') as writeTask, dx.Task('AITask') as readTask:
@@ -163,19 +151,3 @@ class MyDAQ:
             writeTask.stop()
 
         return data
-
-def magnorm(signal):
-    """
-        Turns magnitude normalised FFT back into signal
-    """    
-    FFT = np.fft.fft(signal)
-    maggie = FFT/np.abs(FFT)
-    return np.fft.ifft(maggie)
-
-def phasenorm(signal):
-    """
-        Turns phase normalised FFT back into signal
-    """   
-    FFT = np.fft.fft(signal)
-    phazy = FFT * np.exp(1j*-np.angle(FFT))
-    return np.fft.ifft(phazy)

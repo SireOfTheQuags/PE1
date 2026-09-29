@@ -1,5 +1,8 @@
 # We start a task to write a single output
-from imports import *
+import nidaqmx as dx
+import matplotlib.pyplot as plt
+import numpy as np
+import time
 
 with dx.Task() as writeTask:
     
