@@ -23,6 +23,7 @@ class Functions:
 
 
     # Saves a list or array to a .txt file with a custom name.
+    @staticmethod
     def save_data_to_txt(data, filename="data_output.txt", delimiter=","):
         array_to_save = np.asarray(data)
         np.savetxt(filename, array_to_save, delimiter=delimiter, fmt="%g")
