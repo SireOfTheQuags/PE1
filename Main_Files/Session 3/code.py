@@ -20,4 +20,4 @@ mydaq.MyDAQ.set_sample_rate(fs)
 for freq in freqs:
     sine = ampli*np.sin(2 * np.pi * freq * t)
     data = mydaq.MyDAQ.write_and_read(sine)
-    functions.Functions.save_data_to_txt(f"voltage {freq} Hz")
+    functions.Functions.save_data_to_txt(f"voltage_after_{freq}Hz")
