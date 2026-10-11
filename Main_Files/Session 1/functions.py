@@ -22,6 +22,13 @@ class Functions:
         return np.fft.ifft(phazy).real
 
 
+    # Saves a list or array to a .txt file with a custom name.
+    def save_data_to_txt(data, filename="data_output.txt", delimiter=","):
+        array_to_save = np.asarray(data)
+        np.savetxt(filename, array_to_save, delimiter=delimiter, fmt="%g")
+        print(f"Successfully saved data to '{filename}'")
+
+
     # Plot a signal in either the time or frequency domain.
     @staticmethod
     def plot(signal, fs, domain="time",
