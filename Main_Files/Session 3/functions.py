@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import integrate
 
 
 class Functions:
@@ -21,6 +22,29 @@ class Functions:
         phazy = np.abs(FFT)
         return np.fft.ifft(phazy).real
 
+    #Calculate FFT. You can choose to normalize it.
+    @staticmethod
+    def fft(signal, fs, normalize=False):
+        n = len(signal)
+        fft =  np.fft.fft(signal)
+        frequencies = np.fft.fftfreq(n, d=(1 / fs))
+        mask = frequencies >= 0
+        fft = fft[mask]
+        frequencies = frequencies[mask]
+        if normalize:  
+            fft = fft / n
+            fft[1:] *= 2
+            return fft, frequencies
+        return fft, frequencies
+        
+
+    # Find the power around a specific frequency bin. THIS DOES NOT NORMALIZE FFT
+    # THAT NEEDS TO BE DONE MANUALLY
+    @staticmethod
+    def power(f_bins, fft, f, delta_f):
+        interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
+        power = integrate.trapezoid(np.abs(fft[interval])**2, f_bins[interval])
+        return power
 
     # Saves a list or array to a .txt file with a custom name.
     @staticmethod
