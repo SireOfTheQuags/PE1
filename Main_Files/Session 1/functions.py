@@ -28,7 +28,7 @@ class Functions:
         array_to_save = np.asarray(data)
         np.savetxt(filename, array_to_save, delimiter=delimiter, fmt="%g")
         print(f"Successfully saved data to '{filename}'")
-
+        
 
     # Plot a signal in either the time or frequency domain.
     @staticmethod
