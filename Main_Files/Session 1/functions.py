@@ -28,16 +28,15 @@ class Functions:
     @staticmethod
     def fft(signal, fs, normalize=False):
         n = len(signal)
-        fft =  np.fft.fft(signal)
+        fft_val =  np.fft.fft(signal)
         frequencies = np.fft.fftfreq(n, d=(1 / fs))
         mask = frequencies >= 0
-        fft = fft[mask]
+        fft_val = fft_val[mask]
         frequencies = frequencies[mask]
+        fft_val[1:] *= 2
         if normalize:  
-            fft = fft / n
-            fft[1:] *= 2
-            return fft, frequencies
-        return fft, frequencies
+            fft_val = fft_val / n
+        return fft_val, frequencies
 
 
     # Calculates the signal power around a specific frequency. If you want a single
