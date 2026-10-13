@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import integrate
+from tqdm.auto import tqdm
 
 
 class Functions:
@@ -22,6 +23,7 @@ class Functions:
         phazy = np.abs(FFT)
         return np.fft.ifft(phazy).real
 
+
     #Calculate FFT. You can choose to normalize it.
     @staticmethod
     def fft(signal, fs, normalize=False):
@@ -36,15 +38,78 @@ class Functions:
             fft[1:] *= 2
             return fft, frequencies
         return fft, frequencies
-        
 
-    # Find the power around a specific frequency bin. THIS DOES NOT NORMALIZE FFT
-    # THAT NEEDS TO BE DONE MANUALLY
-    @staticmethod
-    def power(f_bins, fft, f, delta_f):
-        interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
-        power = integrate.trapezoid(np.abs(fft[interval])**2, f_bins[interval])
-        return power
+
+    # Calculates the signal power around a specific frequency. If you want a single
+    # frequency, just make min_freq = max_freq and freq_amount = 1.
+    @staticmethod   
+    def calculate_power(daq, fs, freq_amount, min_freq, 
+                          max_freq, amplitude, 
+                          duration, df, scale = "linear", normalize = True, 
+                          save_voltages = False, decibel_scale = False):
+
+        def calc_power(f_bins, fft, f, delta_f):
+                interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
+                power = integrate.trapezoid(np.abs(fft[interval])**2, f_bins[interval])
+                return power
+        
+        # Initialisation
+        if scale == "linear":
+            freqs = np.linspace(min_freq, max_freq, freq_amount)
+        elif scale == "log":
+            freqs = np.geomspace(min_freq, max_freq, freq_amount)
+        else:
+            raise ValueError(f"Invalid scale: '{scale}'. Use 'linear' or 'log'.")
+
+        samples = int(fs*duration)
+        t = np.arange(samples) / fs
+
+        # Start of main loop for calculating the power
+        # Generating voltages and sending it through circuit
+        voltages_before = []
+        voltages_after = []
+
+        for freq in tqdm(freqs):
+            sine = amplitude * np.sin(2 * np.pi * freq * t)
+            data = daq.write_and_read(sine)
+            voltages_after.append(data)
+            voltages_before.append(sine)
+            if save_voltages:
+                Functions.save_data_to_txt(data, f"voltage_after_{freq:.2f}Hz")
+                Functions.save_data_to_txt(sine, f"voltage_before_{freq:.2f}Hz")
+
+        # Taking the FFT of the voltages, both the initial and the sent-through-circuit
+        # Decide whether to normalize the FFT in the arguments of the function
+        ffts_before = []
+        ffts_after = []
+
+        for i in voltages_after:
+            fft, fbins = Functions.fft(i, fs, normalize)
+            ffts_after.append(fft)
+
+        for i in voltages_before:
+            fft, fbins = Functions.fft(i, fs, normalize)
+            ffts_before.append(fft)
+
+        # Calculating the power, both the initial and the sent-through-circuit
+        powers_before = []
+        powers_after = []
+
+        for i, fft in enumerate(ffts_after):
+            power = calc_power(fbins, fft, freqs[i], df)
+            powers_after.append(power)
+
+        for i, fft in enumerate(ffts_before):
+            power = calc_power(fbins, fft, freqs[i], df)
+            powers_before.append(power)
+
+        # Calculating the transfer function values
+        transfer_function = np.sqrt(np.asarray(powers_after) / np.asarray(powers_before))
+        if decibel_scale:
+            transfer_function = 20 * np.log10(transfer_function)
+
+        return powers_after, powers_before, transfer_function, freqs
+
 
     # Saves a list or array to a .txt file with a custom name.
     @staticmethod
