@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import integrate
+from scipy import stats
 from tqdm.auto import tqdm
 
 
@@ -28,12 +29,12 @@ class Functions:
     @staticmethod
     def fft(signal, fs, normalize=False):
         n = len(signal)
-        fft_val =  np.fft.fft(signal)
-        frequencies = np.fft.fftfreq(n, d=(1 / fs))
-        mask = frequencies >= 0
-        fft_val = fft_val[mask]
-        frequencies = frequencies[mask]
-        fft_val[1:] *= 2
+        fft_val =  np.fft.rfft(signal)
+        frequencies = np.fft.rfftfreq(n, d=(1 / fs))
+        if n % 2 == 0:
+           fft_val[1:-1] *= 2 
+        else:
+            fft_val[1:] *= 2
         if normalize:  
             fft_val = fft_val / n
         return fft_val, frequencies
@@ -51,6 +52,11 @@ class Functions:
                 interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
                 power = integrate.trapezoid(np.abs(fft[interval])**2, f_bins[interval])
                 return power
+
+        def calc_phase(f_bins, fft, f, delta_f):
+                interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
+                phases = np.angle(fft[interval])
+                return np.angle(np.mean(np.exp(1j * phases))) if len(phases) else np.nan
         
         # Initialisation
         if scale == "linear":
@@ -70,12 +76,12 @@ class Functions:
 
         for freq in tqdm(freqs):
             sine = amplitude * np.sin(2 * np.pi * freq * t)
-            data = daq.write_and_read(sine)
-            voltages_after.append(data)
-            voltages_before.append(sine)
+            initial_signal, post_signal = daq.write_and_read(sine)
+            voltages_after.append(post_signal)
+            voltages_before.append(initial_signal)
             if save_voltages:
-                Functions.save_data_to_txt(data, f"voltage_after_{freq:.2f}Hz")
-                Functions.save_data_to_txt(sine, f"voltage_before_{freq:.2f}Hz")
+                Functions.save_data_to_txt(post_signal, f"voltage_after_{freq:.2f}Hz")
+                Functions.save_data_to_txt(initial_signal, f"voltage_before_{freq:.2f}Hz")
 
         # Taking the FFT of the voltages, both the initial and the sent-through-circuit
         # Decide whether to normalize the FFT in the arguments of the function
@@ -102,12 +108,27 @@ class Functions:
             power = calc_power(fbins, fft, freqs[i], df)
             powers_before.append(power)
 
-        # Calculating the transfer function values
-        transfer_function = np.sqrt(np.asarray(powers_after) / np.asarray(powers_before))
-        if decibel_scale:
-            transfer_function = 20 * np.log10(transfer_function)
+# Calculating the phase, both the initial and the sent-through-circuit
+        phases_before = []
+        phases_after = []
 
-        return powers_after, powers_before, transfer_function, freqs
+        for i, fft in enumerate(ffts_after):
+            phase = calc_phase(fbins, fft, freqs[i], df)
+            phases_after.append(phase)
+
+        for i, fft in enumerate(ffts_before):
+            phase = calc_phase(fbins, fft, freqs[i], df)
+            phases_before.append(phase)
+
+        # Calculating the magnitude transfer function values
+        mag_transfer_function = np.sqrt(np.asarray(powers_after) / np.asarray(powers_before))
+        if decibel_scale:
+            mag_transfer_function = 20 * np.log10(mag_transfer_function)
+
+        # Calculating the phase transfer function values
+        phase_transfer_function = np.angle(np.exp(1j *(np.asarray(phases_after) - np.asarray(phases_before))))
+
+        return mag_transfer_function, phase_transfer_function, freqs
 
 
     # Saves a list or array to a .txt file with a custom name.
@@ -119,6 +140,7 @@ class Functions:
         
 
     # Plot a signal in either the time or frequency domain.
+
     @staticmethod
     def plot(signal, fs, domain="time",
             xlabel=None, ylabel=None,
@@ -133,33 +155,32 @@ class Functions:
 
         if domain == "time":
             x = np.arange(n) / fs
-
             ax.plot(x, signal)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
 
         elif domain == "frequency":
-            FFT = np.fft.fft(signal)
-            frequencies = np.fft.fftfreq(n, d=(1 / fs))
+            FFT = np.fft.rfft(signal)
+            frequencies = np.fft.rfftfreq(n, d=1 / fs)
 
             spectrum = np.abs(FFT)
 
+            if n % 2 == 0:
+                spectrum[1:-1] *= 2
+            else:
+                spectrum[1:] *= 2
+
             if normalize:
                 spectrum = spectrum / n
-                spectrum[1:n//2] *= 2
 
-            mask = frequencies >= 0
-
-            ax.plot(frequencies[mask], spectrum[mask])
-
+            ax.plot(frequencies, spectrum)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
 
             if xlim is None:
-                if scale == "semilogx":
-                    mask1 = frequencies > 0
-                    ax.set_xlim(frequencies[mask1].min(), fs / 2)
-            else:
+                if scale == "semilogx" or scale == "loglog":
+                    ax.set_xlim(frequencies[frequencies > 0].min(), fs / 2)
+                else:
                     ax.set_xlim(0, fs / 2)
 
         else:

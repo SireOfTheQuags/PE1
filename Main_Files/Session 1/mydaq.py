@@ -107,12 +107,17 @@ class MyDAQ:
 
 
     # Write and read simultaneously
-    def write_and_read(self, voltages):
+    def write_and_read(self, 
+                       voltages, 
+                       initial_input_channel = 'myDAQ1/ai0', 
+                       post_input_channel = 'myDAQ1/ai1', 
+                       output_channel = 'myDAQ1/ao0'):
 
         with dx.Task('AOTask') as writeTask, dx.Task('AITask') as readTask:
 
-            # Add input channel
-            readTask.ai_channels.add_ai_voltage_chan('myDAQ1/ai0')
+            # Add input channels. The order which they're initialized changes the order of the data array later
+            readTask.ai_channels.add_ai_voltage_chan(initial_input_channel)
+            readTask.ai_channels.add_ai_voltage_chan(post_input_channel)
 
             # Number of samples
             samps_per_chan = len(voltages)
@@ -125,7 +130,7 @@ class MyDAQ:
             )
 
             # Add output channel
-            writeTask.ao_channels.add_ao_voltage_chan('myDAQ1/ao0')
+            writeTask.ao_channels.add_ao_voltage_chan(output_channel)
 
             # Define sample rate
             writeTask.timing.cfg_samp_clk_timing(
@@ -140,14 +145,17 @@ class MyDAQ:
             # Write signal
             writeTask.write(voltages, auto_start=True)
 
-            # Read signal
-            data = readTask.read(
-                number_of_samples_per_channel=samps_per_chan
-            )
+            # Read signal. Data is an array with 2 subarrays. The first is ai0, the second ai1.
+            # This is because we initialized ai0 read first, and then ai1.
+            data = readTask.read(number_of_samples_per_channel=samps_per_chan)
 
             # Wait until writing is finished
             time.sleep(samps_per_chan / self.rate + 0.01)
 
+            # Separate the 2 measured data things
+            initial_signal = np.asarray(data[0])         # ai0
+            post_signal = np.asarray(data[1])    # ai1
+
             writeTask.stop()
 
-        return data
+        return initial_signal, post_signal
