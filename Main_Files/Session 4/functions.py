@@ -45,19 +45,39 @@ class Functions:
     @staticmethod   
     def calculate_power(daq, fs, freq_amount, min_freq, 
                           max_freq, amplitude, 
-                          duration, df, scale = "linear", normalize = True, 
-                          save_voltages = False, decibel_scale = False):
+                          duration, df, calibration_phase_offset, 
+                          scale = "linear", normalize = True, 
+                          save_voltages = False, decibel_scale = False,
+                          initial_input_channel=None,
+                          post_input_channel=None,
+                          output_channel=None):
 
         def calc_power(f_bins, fft, f, delta_f):
-                interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
-                power = integrate.trapezoid(np.abs(fft[interval])**2, f_bins[interval])
-                return power
+            interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
+            if np.count_nonzero(interval) < 2:
+                raise ValueError(
+                f"Fewer than two FFT bins found near {f:.2f} Hz. "
+                "Increase df or duration."
+                )
+            power = integrate.trapezoid(np.abs(fft[interval])**2, f_bins[interval])
+            return power
 
         def calc_phase(f_bins, fft, f, delta_f):
-                interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
-                phases = np.angle(fft[interval])
-                return np.angle(np.mean(np.exp(1j * phases))) if len(phases) else np.nan
-        
+            interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
+            coefficients = fft[interval]
+            return np.angle(np.mean(coefficients)) if len(coefficients) else np.nan
+
+        channel_kwargs = {}
+        if initial_input_channel is not None:
+            channel_kwargs["initial_input_channel"] = initial_input_channel
+
+        if post_input_channel is not None:
+            channel_kwargs["post_input_channel"] = post_input_channel
+
+        if output_channel is not None:
+            channel_kwargs["output_channel"] = output_channel
+
+            
         # Initialisation
         if scale == "linear":
             freqs = np.linspace(min_freq, max_freq, freq_amount)
@@ -66,7 +86,7 @@ class Functions:
         else:
             raise ValueError(f"Invalid scale: '{scale}'. Use 'linear' or 'log'.")
 
-        samples = int(fs*duration)
+        samples = int(fs * duration)
         t = np.arange(samples) / fs
 
         # Start of main loop for calculating the power
@@ -76,7 +96,7 @@ class Functions:
 
         for freq in tqdm(freqs):
             sine = amplitude * np.sin(2 * np.pi * freq * t)
-            initial_signal, post_signal = daq.write_and_read(sine)
+            initial_signal, post_signal = daq.write_and_read(sine, **channel_kwargs)
             voltages_after.append(post_signal)
             voltages_before.append(initial_signal)
             if save_voltages:
@@ -108,7 +128,7 @@ class Functions:
             power = calc_power(fbins, fft, freqs[i], df)
             powers_before.append(power)
 
-# Calculating the phase, both the initial and the sent-through-circuit
+        # Calculating the phase, both the initial and the sent-through-circuit
         phases_before = []
         phases_after = []
 
@@ -121,14 +141,101 @@ class Functions:
             phases_before.append(phase)
 
         # Calculating the magnitude transfer function values
-        mag_transfer_function = np.sqrt(np.asarray(powers_after) / np.asarray(powers_before))
+        powers_before = np.asarray(powers_before)
+        powers_after = np.asarray(powers_after)
+        if np.any(powers_before <= 0):
+            raise ValueError("Input power is zero or negative at one or more frequencies.")
+        
+        mag_transfer_function = np.sqrt(powers_after / powers_before)
         if decibel_scale:
             mag_transfer_function = 20 * np.log10(mag_transfer_function)
 
         # Calculating the phase transfer function values
-        phase_transfer_function = np.angle(np.exp(1j *(np.asarray(phases_after) - np.asarray(phases_before))))
+        calibration_phase_offset = np.asarray(calibration_phase_offset)
+        if calibration_phase_offset.shape != freqs.shape:
+            raise ValueError("Calibration offsets must match the measurement frequency array.")
+
+        phase_transfer_function = np.angle(np.exp(1j * (
+                                  np.asarray(phases_after)
+                                  - np.asarray(phases_before) 
+                                  - calibration_phase_offset
+                                  )))
 
         return mag_transfer_function, phase_transfer_function, freqs
+
+
+    # Measures the phase offset between the two DAQ input channels at each frequency.
+    # Both channels must measure the same signal, with the circuit bypassed.
+    # Uses the same frequency settings (freq_amount, min_freq, max_freq, scale)
+    # as calculate_power so that the calibration offsets match the measurement
+    # frequencies and order. Also use the same fs, duration, df, and normalize
+    # settings for consistent phase extraction. The DAQ sample rate must match fs.
+    # Returns (phase_offsets, freqs), with phase offsets in radians, wrapped to
+    # the range [-pi, pi]. For a single frequency, set min_freq = max_freq and
+    # freq_amount = 1.
+    @staticmethod
+    def calc_phase_dif(daq, fs, freq_amount, min_freq, max_freq,
+                    amplitude, duration, df, scale="linear",
+                    normalize=True,
+                    initial_input_channel=None,
+                    post_input_channel=None,
+                    output_channel=None):
+
+        channel_kwargs = {}
+        if initial_input_channel is not None:
+            channel_kwargs["initial_input_channel"] = initial_input_channel
+
+        if post_input_channel is not None:
+            channel_kwargs["post_input_channel"] = post_input_channel
+
+        if output_channel is not None:
+            channel_kwargs["output_channel"] = output_channel
+
+
+        # Generate the frequency array
+        if scale == "linear":
+            freqs = np.linspace(min_freq, max_freq, freq_amount)
+        elif scale == "log":
+            freqs = np.geomspace(min_freq, max_freq, freq_amount)
+        else:
+            raise ValueError(f"Invalid scale: '{scale}'. Use 'linear' or 'log'.")
+
+        samples = int(fs * duration)
+        t = np.arange(samples) / fs
+        phase_offsets = []
+
+        for freq in tqdm(freqs):
+            sine = amplitude * np.sin(2 * np.pi * freq * t)
+
+            # Measure the same signal on both input channels
+            signal_before, signal_after = daq.write_and_read(sine, **channel_kwargs)
+
+            # Calculate FFTs
+            fft_before, f_bins = Functions.fft(signal_before, fs, normalize)
+            fft_after, _ = Functions.fft(signal_after, fs, normalize)
+
+            # Select FFT coefficients near the target frequency
+            interval = (
+                (f_bins > freq - df) &
+                (f_bins < freq + df)
+            )
+
+            if np.count_nonzero(interval) < 2:
+                raise ValueError(
+                    f"Fewer than two FFT bins found near {freq:.2f} Hz. "
+                    "Increase df or duration."
+                )
+
+            # Estimate each channel's phase
+            phase_before = np.angle(np.mean(fft_before[interval]))
+            phase_after = np.angle(np.mean(fft_after[interval]))
+
+            # Wrapped channel phase offset, in radians
+            phase_offset = np.angle(np.exp(1j * (phase_after - phase_before)))
+
+            phase_offsets.append(phase_offset)
+
+        return np.asarray(phase_offsets), freqs
 
 
     # Saves a list or array to a .txt file with a custom name.
@@ -140,7 +247,6 @@ class Functions:
         
 
     # Plot a signal in either the time or frequency domain.
-
     @staticmethod
     def plot(signal, fs, domain="time",
             xlabel=None, ylabel=None,
