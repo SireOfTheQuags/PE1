@@ -63,9 +63,14 @@ class Functions:
             return power
 
         def calc_phase(f_bins, fft, f, delta_f):
-            interval = (f_bins > f - delta_f) & (f_bins < f + delta_f)
-            coefficients = fft[interval]
-            return np.angle(np.mean(coefficients)) if len(coefficients) else np.nan
+            if len(f_bins) == 0 or len(fft) == 0:
+                return np.nan
+            # FFT bin closest to desired frequency
+            idx = np.argmin(np.abs(f_bins - f))
+            # If closest bin is too far away just return nan
+            if abs(f_bins[idx] - f) > delta_f:
+                return np.nan
+            return np.angle(fft[idx])
 
         channel_kwargs = {}
         if initial_input_channel is not None:
@@ -94,7 +99,7 @@ class Functions:
         voltages_before = []
         voltages_after = []
 
-        for freq in tqdm(freqs):
+        for freq in tqdm(freqs, desc="Creating and measuring signals"):
             sine = amplitude * np.sin(2 * np.pi * freq * t)
             initial_signal, post_signal = daq.write_and_read(sine, **channel_kwargs)
             voltages_after.append(post_signal)
@@ -164,7 +169,7 @@ class Functions:
         return mag_transfer_function, phase_transfer_function, freqs
 
 
-    # Measures the phase offset between the two DAQ input channels at each frequency.
+    # Measures the phase offset between two DAQ input channels at each frequency.
     # Both channels must measure the same signal, with the circuit bypassed.
     # Uses the same frequency settings (freq_amount, min_freq, max_freq, scale)
     # as calculate_power so that the calibration offsets match the measurement
@@ -204,7 +209,7 @@ class Functions:
         t = np.arange(samples) / fs
         phase_offsets = []
 
-        for freq in tqdm(freqs):
+        for freq in tqdm(freqs, desc="Calibrating phase"):
             sine = amplitude * np.sin(2 * np.pi * freq * t)
 
             # Measure the same signal on both input channels
@@ -214,23 +219,16 @@ class Functions:
             fft_before, f_bins = Functions.fft(signal_before, fs, normalize)
             fft_after, _ = Functions.fft(signal_after, fs, normalize)
 
-            # Select FFT coefficients near the target frequency
-            interval = (
-                (f_bins > freq - df) &
-                (f_bins < freq + df)
-            )
+            # Calculate each channel's phase
+            idx = np.argmin(np.abs(f_bins - freq))
+            if abs(f_bins[idx] - freq) > df:
+                phase_offsets.append(np.nan)
+                continue
 
-            if np.count_nonzero(interval) < 2:
-                raise ValueError(
-                    f"Fewer than two FFT bins found near {freq:.2f} Hz. "
-                    "Increase df or duration."
-                )
+            phase_before = np.angle(fft_before[idx])
+            phase_after = np.angle(fft_after[idx])
 
-            # Estimate each channel's phase
-            phase_before = np.angle(np.mean(fft_before[interval]))
-            phase_after = np.angle(np.mean(fft_after[interval]))
-
-            # Wrapped channel phase offset, in radians
+            # Wrapped channel phase offset in radians
             phase_offset = np.angle(np.exp(1j * (phase_after - phase_before)))
 
             phase_offsets.append(phase_offset)

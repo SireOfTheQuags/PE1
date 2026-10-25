@@ -17,7 +17,8 @@ output_channel = 'myDAQ1/ao0'
 scale1 = 'log'
 calibration_amount = 3
 measurement_amount = 5
-calibrated_mean = 0
+freq_amount = 40
+calibrated_mean = np.zeros(freq_amount)
 fs = 100000
 freq_amount = 40
 min_freq = 20
@@ -27,8 +28,6 @@ dur = 0.5
 df = 3
 
 daq.set_sample_rate(fs)
-
-daq = mydaq.MyDAQ()
 
 magnitude, phase, frequencies = functions.Functions.calculate_power(
     daq, fs, freq_amount, min_freq,
