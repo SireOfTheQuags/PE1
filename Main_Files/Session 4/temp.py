@@ -9,9 +9,9 @@ daq = mydaq.MyDAQ()
 
 #--------------------------------------------------#
 # Channel settings
-initial_input_channel = 'd'
-post_input_channel = 'd'
-output_channel = 'd'
+initial_input_channel = 'myDAQ1/ai0'
+post_input_channel = 'myDAQ1/ai1'
+output_channel = 'myDAQ1/ao0'
 
 # Measurement settings
 scale1 = 'log'
