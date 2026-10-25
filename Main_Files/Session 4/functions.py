@@ -164,7 +164,7 @@ class Functions:
         return mag_transfer_function, phase_transfer_function, freqs
 
 
-    # Measures the phase offset between the two DAQ input channels at each frequency.
+    # Measures the phase offset between two DAQ input channels at each frequency.
     # Both channels must measure the same signal, with the circuit bypassed.
     # Uses the same frequency settings (freq_amount, min_freq, max_freq, scale)
     # as calculate_power so that the calibration offsets match the measurement

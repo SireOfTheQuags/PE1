@@ -3,6 +3,7 @@ import functions
 import mydaq
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import curve_fit
 import time
 
 daq = mydaq.MyDAQ()
@@ -101,7 +102,6 @@ sem_phase_total_deg = np.degrees(sem_phase_total)
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
 
 # Magnitude plot
-
 magnitude_db = 20 * np.log10(mean_magnitude)
 magnitude_low = mean_magnitude - sem_magnitude
 magnitude_high = mean_magnitude + sem_magnitude
