@@ -236,6 +236,37 @@ class Functions:
         return np.asarray(phase_offsets), freqs
 
 
+    # Output is the propagated standard uncertainty (1 sigma) FOR THE THEORETICAL prediction of the curve,
+    # in the units of func's output. This is meant solely to calculate the uncertainty caused by
+    # the uncertainty in the values of the variables used. This gives a band around the theoretical curve. 
+    # DO NOT add it to the error bars of the measured data points. Combine it with the experimental 
+    # uncertainty only once, in the residual (data - theory).
+    # cov: optional full covariance matrix (overrides independence assumption).
+    def propagate_theo_error(func, inputs, cov=None):
+        inputs = np.asarray(inputs, dtype=float)
+
+        if inputs.ndim != 2 or inputs.shape[1] != 2:
+            raise ValueError("Each input must be [value, uncertainty].")
+        if not np.all(np.isfinite(inputs)):
+            raise ValueError("Inputs must be finite.")
+        
+        values, sigmas = inputs[:, 0], inputs[:, 1]
+        if np.any(sigmas < 0):
+            raise ValueError("Uncertainties cannot be negative.")
+
+        grad = np.empty(len(values))
+        for i, v in enumerate(values):
+            h = 1e-6 * abs(v) if v != 0 else (1e-6 * sigmas[i] or 1e-6)
+            up, dn = values.copy(), values.copy()
+            up[i] += h
+            dn[i] -= h
+            grad[i] = (func(*up) - func(*dn)) / (2 * h)
+
+        if cov is None:
+            return np.sqrt(np.sum((grad * sigmas) ** 2))
+        return np.sqrt(grad @ np.asarray(cov) @ grad)
+
+
     # Saves a list or array to a .txt file with a custom name.
     @staticmethod
     def save_data_to_txt(data, filename="data_output.txt", delimiter=","):
