@@ -242,6 +242,7 @@ class Functions:
     # DO NOT add it to the error bars of the measured data points. Combine it with the experimental 
     # uncertainty only once, in the residual (data - theory).
     # cov: optional full covariance matrix (overrides independence assumption).
+    @staticmethod
     def propagate_theo_error(func, inputs, cov=None):
         inputs = np.asarray(inputs, dtype=float)
 
@@ -274,6 +275,43 @@ class Functions:
         np.savetxt(filename, array_to_save, delimiter=delimiter, fmt="%g")
         print(f"Successfully saved data to '{filename}'")
         
+    #
+    @staticmethod
+    def bode_plot(frequencies, mean_magnitude, 
+                  mean_phase, mag_total_error, 
+                  phase_total_error_rad):
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
+
+        # Magnitude error plot
+        magnitude_db = 20 * np.log10(mean_magnitude)
+        magnitude_low = mean_magnitude - mag_total_error
+        magnitude_high = mean_magnitude + mag_total_error
+        magnitude_db_low = 20 * np.log10(magnitude_low)
+        magnitude_db_high = 20 * np.log10(magnitude_high)
+        mag_yerr_db = np.asarray([magnitude_db - magnitude_db_low, magnitude_db_high - magnitude_db])
+
+        ax1.errorbar(frequencies, magnitude_db, yerr=mag_yerr_db, markersize = 2.5, fmt='o', capsize=3, ecolor = 'red')
+        ax1.set_xscale('log')
+        ax1.set_xlabel('Frequency (Hz)')
+        ax1.set_ylabel('Magnitude (dB)')
+        ax1.set_title('Experimental Transfer Function Magnitude')
+        ax1.grid(True, which='both')
+
+        # Phase error plot
+        mean_phase_deg =np.degrees(mean_phase)
+        phase_total_error_deg = np.degrees(phase_total_error_rad)
+
+        ax2.errorbar(frequencies, mean_phase_deg, yerr=phase_total_error_deg, markersize = 2.5, fmt='o', capsize=3, ecolor = 'red')
+        ax2.set_xscale('log')
+        ax2.set_xlabel('Frequency (Hz)')
+        ax2.set_ylabel('Phase (degrees)')
+        ax2.set_title('Experimental Transfer Function Phase')
+        ax2.grid(True, which='both')
+
+        plt.tight_layout()
+        plt.show()
+
 
     # Plot a signal in either the time or frequency domain.
     @staticmethod
