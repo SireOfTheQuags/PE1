@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import integrate
-from scipy import stats
 from tqdm.auto import tqdm
+from scipy.optimize import curve_fit
+import inspect
 
 
 class Functions:
@@ -47,7 +48,7 @@ class Functions:
                           max_freq, amplitude, 
                           duration, df, calibration_phase_offset, 
                           scale = "linear", normalize = True, 
-                          save_voltages = False, decibel_scale = False,
+                          save_voltages = False,
                           initial_input_channel=None,
                           post_input_channel=None,
                           output_channel=None):
@@ -152,8 +153,6 @@ class Functions:
             raise ValueError("Input power is zero or negative at one or more frequencies.")
         
         mag_transfer_function = np.sqrt(powers_after / powers_before)
-        if decibel_scale:
-            mag_transfer_function = 20 * np.log10(mag_transfer_function)
 
         # Calculating the phase transfer function values
         calibration_phase_offset = np.asarray(calibration_phase_offset)
@@ -236,13 +235,268 @@ class Functions:
         return np.asarray(phase_offsets), freqs
 
 
+    # Output is the propagated standard uncertainty (1 sigma) FOR THE THEORETICAL prediction of the curve,
+    # in the units of func's output. This is meant solely to calculate the uncertainty caused by
+    # the uncertainty in the values of the variables used. This gives a band around the theoretical curve. 
+    # DO NOT add it to the error bars of the measured data points. Combine it with the experimental 
+    # uncertainty only once, in the residual (data - theory).
+    # cov: optional full covariance matrix (overrides independence assumption).
+    @staticmethod
+    def propagate_theo_error(func, inputs, cov=None):
+        inputs = np.asarray(inputs, dtype=float)
+
+        if inputs.ndim != 2 or inputs.shape[1] != 2:
+            raise ValueError("Each input must be [value, uncertainty].")
+        if not np.all(np.isfinite(inputs)):
+            raise ValueError("Inputs must be finite.")
+        
+        values, sigmas = inputs[:, 0], inputs[:, 1]
+        if np.any(sigmas < 0):
+            raise ValueError("Uncertainties cannot be negative.")
+
+        grad = np.empty(len(values))
+        for i, v in enumerate(values):
+            h = 1e-6 * abs(v) if v != 0 else (1e-6 * sigmas[i] or 1e-6)
+            up, dn = values.copy(), values.copy()
+            up[i] += h
+            dn[i] -= h
+            grad[i] = (func(*up) - func(*dn)) / (2 * h)
+
+        if cov is None:
+            return np.sqrt(np.sum((grad * sigmas) ** 2))
+        return np.sqrt(grad @ np.asarray(cov) @ grad)
+
+
     # Saves a list or array to a .txt file with a custom name.
     @staticmethod
     def save_data_to_txt(data, filename="data_output.txt", delimiter=","):
         array_to_save = np.asarray(data)
         np.savetxt(filename, array_to_save, delimiter=delimiter, fmt="%g")
         print(f"Successfully saved data to '{filename}'")
+
+
+    # Function to calculate a fit for the bode plots (for each plot this function must be called separately). 
+    # 'Func' is a separately defined function of the theoretical model.
+    # The first argument of 'func' must be the independent variable (frequency). 
+    # Every argument after that represents a parameter that curve_fit is allowed to optimise.
+    # Data is what we want the function to fit to. '**kwargs' are additional keyword you want to pass to 
+    # curve_fit. DO NOT PASS THIS 'sigma'. PASS THE TOTAL ERRORS FOR THE RESPECTIVE VALUE AS VALUE FOR THE
+    # "error" parameter: "mag total error" in linear terms for magnitude and "phase total error rad" for phase.
+    # 'frequencies' must be positive, but do not need to be logarithmically spaced.
+    # The fitted curve is evaluated on a logarithmically spaced frequency array.
+    # If fitting phase, set 'unwrap_phase = True'
+    @staticmethod
+    def fit_bode_func(frequencies, func, ydata, ini_guess = None, 
+                      unwrap_phase = False, error = None, **kwargs):
+        kwargs.setdefault("absolute_sigma", True)
+
+        frequencies = np.asarray(frequencies, dtype = float)
+        ydata = np.asarray(ydata, dtype = float)
+
+        if error is None:
+            raise ValueError("Pass the total measurement errors via error=.")
+        error = np.asarray(error, dtype=float)
+        if error.shape != frequencies.shape or np.any(error <= 0):
+            raise ValueError("error must match the frequency array and be strictly positive.")
         
+        if frequencies.ndim != 1 or len(frequencies) < 2:
+            raise ValueError("At least two frequencies are required.")
+        if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0):
+            raise ValueError("Frequencies must be finite and positive.")
+        if ydata.ndim != 1 or len(ydata) != len(frequencies):
+            raise ValueError("ydata must match the frequency array.")
+        if not np.all(np.isfinite(ydata)):
+            raise ValueError("ydata must contain only finite values.")
+        if np.any(np.diff(frequencies) <= 0):
+            raise ValueError("Frequencies must be strictly ascending.")
+        if unwrap_phase:
+            ydata = np.unwrap(ydata)
+
+        popt, pcov = curve_fit(func, frequencies, ydata, p0 = ini_guess, sigma = error, **kwargs)
+
+        fit_freqs = np.logspace(np.log10(min(frequencies)), np.log10(max(frequencies)), 1000)
+        fitted_data = func(fit_freqs, *popt)
+
+        return fitted_data, fit_freqs, popt, pcov
+
+
+    # Generate a bode plot and polar locus plot of the transfer function. 
+    # Optionally plots the fit as well. The fit has to be passed as an argument separately.
+    # Make sure the fit has the same dimensions as the data passed into this function.
+    @staticmethod
+    def bode_plot(frequencies, mean_magnitude, 
+                  mean_phase, mag_total_error, 
+                  phase_total_error_rad, 
+                  fit_mag = None, fit_mag_func = None, fit_mag_popt = None, fit_mag_pcov = None,
+                  fit_phase = None, fit_phase_func = None, fit_phase_popt = None, fit_phase_pcov = None,
+                  fit_freqs = None):
+
+        # Convert data to arrays
+        frequencies = np.asarray(frequencies, dtype=float)
+        mean_magnitude = np.asarray(mean_magnitude, dtype=float)
+        mean_phase = np.asarray(mean_phase, dtype=float)
+        mag_total_error = np.asarray(mag_total_error, dtype=float)
+        phase_total_error_rad = np.asarray(phase_total_error_rad, dtype=float)
+
+        # Validation for various things before plotting
+        if not (len(frequencies) == len(mean_magnitude) == len(mean_phase) == len(mag_total_error) == len(phase_total_error_rad)):
+            raise ValueError("All experimental arrays must have matching lengths.")
+        if np.any(np.diff(frequencies) <= 0):
+            raise ValueError("Frequencies must be strictly ascending.")
+        if np.any(mean_magnitude <= 0):
+            raise ValueError("Mean magnitudes must be positive.")
+        if fit_mag is not None or fit_phase is not None:
+            if fit_freqs is None:
+                raise ValueError("fit_freqs must be provided when plotting fits.")
+        if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0):
+            raise ValueError("Frequencies must be finite and positive.")
+        if not all(np.all(np.isfinite(arr)) for arr in (mean_magnitude, mean_phase, mag_total_error, phase_total_error_rad)):
+            raise ValueError("Experimental arrays must contain only finite values.")
+        if np.any(mag_total_error < 0) or np.any(phase_total_error_rad < 0):
+            raise ValueError("Uncertainties cannot be negative.")
+        if fit_freqs is not None:
+            fit_freqs = np.asarray(fit_freqs, dtype=float)
+            if fit_freqs.ndim != 1 or not np.all(np.isfinite(fit_freqs)) or np.any(fit_freqs <= 0):
+                raise ValueError("fit_freqs must be a finite, positive 1D array.")
+        if fit_mag is not None:
+            fit_mag = np.asarray(fit_mag, dtype=float)
+            if fit_mag.shape != fit_freqs.shape:
+                raise ValueError("fit_mag must match fit_freqs.")
+        if fit_phase is not None:
+            fit_phase = np.asarray(fit_phase, dtype=float)
+            if fit_phase.shape != fit_freqs.shape:
+                raise ValueError("fit_phase must match fit_freqs.")
+        if fit_mag is not None:
+            if not np.all(np.isfinite(fit_mag)) or np.any(fit_mag <= 0):
+                raise ValueError("Fitted magnitudes must be finite and positive.")
+        if fit_phase is not None:
+            if not np.all(np.isfinite(fit_phase)):
+                raise ValueError("Fitted phases must be finite.")
+            
+        if fit_mag is not None:
+            if fit_mag_func is None or fit_mag_popt is None or fit_mag_pcov is None:
+                raise ValueError("Magnitude fit function, parameters and covariance are required.")
+            fit_mag_uncertainty = Functions.calculate_fit_uncertainty(fit_freqs, fit_mag_func, fit_mag_popt, fit_mag_pcov)
+
+        if fit_phase is not None:
+            if fit_phase_func is None or fit_phase_popt is None or fit_phase_pcov is None:
+                raise ValueError("Phase fit function, parameters and covariance are required.")
+            fit_phase_uncertainty = Functions.calculate_fit_uncertainty(fit_freqs, fit_phase_func, fit_phase_popt, fit_phase_pcov)
+
+        # Magnitude error plot
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
+
+        db_per_unit = 20 / np.log(10)
+        magnitude_db = 20 * np.log10(mean_magnitude)
+        mag_yerr_db = db_per_unit * mag_total_error / mean_magnitude
+
+        # Plotting the magnitude fit
+        if fit_mag is not None:
+            fit_mag_db = 20 * np.log10(fit_mag)
+            fit_mag_err_db = db_per_unit * fit_mag_uncertainty / fit_mag
+            ax1.plot(fit_freqs, fit_mag_db, color='black', label='Magnitude fit')
+            ax1.fill_between(fit_freqs, fit_mag_db - fit_mag_err_db, fit_mag_db + fit_mag_err_db,
+                             color='black', alpha=0.15, label='Fit uncertainty')
+
+        ax1.errorbar(frequencies, magnitude_db, yerr=mag_yerr_db, markersize = 2.5, fmt='o', capsize=3, ecolor = 'red', label='Experimental data')
+        ax1.set_xscale('log')
+        ax1.set_xlabel('Frequency (Hz)')
+        ax1.set_ylabel('Magnitude (dB)')
+        ax1.set_title('Experimental Transfer Function Magnitude')
+        ax1.legend()
+        ax1.grid(True, which='both')
+
+        # Phase error plot
+        mean_phase_unwrapped = np.unwrap(mean_phase)
+        mean_phase_deg = np.degrees(mean_phase_unwrapped)
+        phase_total_error_deg = np.degrees(phase_total_error_rad)
+
+        # Plotting the phase fit 
+        if fit_phase is not None:
+            fit_phase_unwrapped = np.unwrap(fit_phase)
+            inside = (frequencies >= fit_freqs[0]) & (frequencies <= fit_freqs[-1])
+            i0 = np.argmax(inside)    # first data point that the fit curve actually covers
+            fit_at_ref = np.interp(frequencies[i0], fit_freqs, fit_phase_unwrapped)
+            fit_phase_unwrapped += 2 * np.pi * np.round((mean_phase_unwrapped[i0] - fit_at_ref) / (2 * np.pi))
+            ax2.plot(fit_freqs, np.degrees(fit_phase_unwrapped), color='black', label='Phase fit')
+            ax2.fill_between(fit_freqs, np.degrees(fit_phase_unwrapped - fit_phase_uncertainty), np.degrees(fit_phase_unwrapped + fit_phase_uncertainty), color='black', alpha=0.15, label='Fit uncertainty')
+
+        ax2.errorbar(frequencies, mean_phase_deg, yerr=phase_total_error_deg, markersize = 2.5, fmt='o', capsize=3, ecolor = 'red', label = 'Experimental data')
+        ax2.set_xscale('log')
+        ax2.set_xlabel('Frequency (Hz)')
+        ax2.set_ylabel('Phase (degrees)')
+        ax2.set_title('Experimental Transfer Function Phase')
+        ax2.legend()
+        ax2.grid(True, which='both')
+
+        plt.tight_layout()
+        plt.show()
+
+        # Polar plot
+        fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(6, 6))
+        ax.errorbar(mean_phase, mean_magnitude, yerr = mag_total_error, xerr = phase_total_error_rad, capsize = 1, markersize = 2.5, fmt='o', color="darkblue", lw=2, ecolor = 'red', label = 'Experimental data')
+        ax.set_title("Polar Magnitude-Phase Locus", va="bottom")
+
+        # Fitted polar curve
+        if fit_mag is not None and fit_phase is not None:
+            ax.plot(np.unwrap(fit_phase), fit_mag, color='black', label='Polar fit')
+
+        ax.legend()
+        plt.show()
+
+        results = {}
+        if fit_mag is not None:
+            results["magnitude"] = Functions.report_fit("Magnitude", fit_mag_func, fit_mag_popt, fit_mag_pcov)
+        if fit_phase is not None:
+            results["phase"] = Functions.report_fit("Phase", fit_phase_func, fit_phase_popt, fit_phase_pcov)
+        return results
+
+
+    # Helper function meant solely for bode_plot function. Calculates uncertainties. Probably don't use standalone.
+    @staticmethod
+    def calculate_fit_uncertainty(fit_freqs, func, popt, pcov):
+
+        popt = np.asarray(popt, dtype=float)
+        pcov = np.asarray(pcov, dtype=float)
+        fit_freqs = np.asarray(fit_freqs, dtype=float)
+
+        if popt.ndim != 1 or len(popt) == 0:
+            raise ValueError("popt must be a non-empty 1D array.")
+        if pcov.shape != (len(popt), len(popt)):
+            raise ValueError("Covariance matrix has an invalid shape.")
+        if not np.all(np.isfinite(popt)) or not np.all(np.isfinite(pcov)):
+            raise ValueError("Fit parameters and covariance must be finite.")
+
+        jac = np.empty((len(fit_freqs), len(popt)))
+
+        for j, p in enumerate(popt):
+            h = 1e-6 * abs(p) if p != 0 else 1e-8
+            p_plus, p_minus = popt.copy(), popt.copy()
+            p_plus[j] += h
+            p_minus[j] -= h
+            jac[:, j] = (func(fit_freqs, *p_plus) - func(fit_freqs, *p_minus)) / (2 * h)
+
+        if not np.all(np.isfinite(jac)):
+            raise ValueError("Jacobian contains non-finite values; check the model function.")
+        variance = np.einsum('ij,jk,ik->i', jac, pcov, jac)
+
+        return np.sqrt(np.maximum(variance, 0.0))
+    
+
+    # Helper function meant solely for bode_plot function.
+    # Prints and returns the fitted parameters with their standard errors (1 sigma).
+    # Parameter names are taken from the model function's arguments (signature), excluding frequency.
+    @staticmethod
+    def report_fit(label, func, popt, pcov):
+        popt = np.asarray(popt, dtype=float)
+        perr = np.sqrt(np.diag(np.asarray(pcov, dtype=float)))
+        names = list(inspect.signature(func).parameters)[1:]   # skip the frequency argument
+        if len(names) != len(popt):
+            names = [f"p{i}" for i in range(len(popt))]
+        for name, value, err in zip(names, popt, perr):
+            print(f"{label} fit: {name} = {value:.6g} ± {err:.2g}")
+        return dict(zip(names, zip(popt, perr)))
+
 
     # Plot a signal in either the time or frequency domain.
     @staticmethod
