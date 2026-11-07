@@ -94,7 +94,7 @@ class Functions:
         if man_freqs is not None:
             freqs = np.concatenate((freqs, np.atleast_1d(man_freqs)))
         # Sort all frequencies from lowest to highest
-        freqs = np.sort(freqs)
+        freqs = np.unique(freqs)
 
         samples = int(fs * duration)
         t = np.arange(samples) / fs
@@ -184,7 +184,7 @@ class Functions:
     @staticmethod
     def calc_phase_dif(daq, fs, freq_amount, min_freq, max_freq,
                     amplitude, duration, df, scale="linear",
-                    normalize=True,
+                    man_freqs = None, normalize=True,
                     initial_input_channel=None,
                     post_input_channel=None,
                     output_channel=None):
@@ -207,6 +207,10 @@ class Functions:
             freqs = np.geomspace(min_freq, max_freq, freq_amount)
         else:
             raise ValueError(f"Invalid scale: '{scale}'. Use 'linear' or 'log'.")
+        if man_freqs is not None:
+            freqs = np.concatenate((freqs, np.atleast_1d(man_freqs)))
+        # Sort all frequencies from lowest to highest
+        freqs = np.unique(freqs)
 
         samples = int(fs * duration)
         t = np.arange(samples) / fs
