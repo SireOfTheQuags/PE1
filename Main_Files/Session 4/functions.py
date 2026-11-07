@@ -47,7 +47,7 @@ class Functions:
     def calculate_power(daq, fs, freq_amount, min_freq, 
                           max_freq, amplitude, 
                           duration, df, calibration_phase_offset, 
-                          scale = "linear", normalize = True, 
+                          scale = "linear", man_freqs = None, normalize = True, 
                           save_voltages = False,
                           initial_input_channel=None,
                           post_input_channel=None,
@@ -91,6 +91,10 @@ class Functions:
             freqs = np.geomspace(min_freq, max_freq, freq_amount)
         else:
             raise ValueError(f"Invalid scale: '{scale}'. Use 'linear' or 'log'.")
+        if man_freqs is not None:
+            freqs = np.concatenate((freqs, np.atleast_1d(man_freqs)))
+        # Sort all frequencies from lowest to highest
+        freqs = np.sort(freqs)
 
         samples = int(fs * duration)
         t = np.arange(samples) / fs
@@ -569,3 +573,5 @@ class Functions:
 
         ax.grid(True)
         plt.show()
+
+
