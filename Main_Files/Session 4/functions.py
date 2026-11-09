@@ -33,6 +33,7 @@ class Curvefits:
 
     # MAGNITUDE: 2nd order bandpass filter. "f0" is the resonance frequency. Q the quality factor.
     # TO USE THIS FUNCTION THE R AND R_tot VARIABLES MUST BE MANUALLY CHANGED TO THEIR RESPECTIVE VALUES.
+    # This will need to be changed inside this file whenever the function is called.
     @staticmethod
     def BandpassFilterMag(f, f0, Q):
         R = np.nan
