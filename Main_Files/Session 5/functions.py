@@ -39,7 +39,7 @@ class Curvefits:
         R = np.nan
         R_tot = np.nan
         if np.isnan(R) or np.isnan(R_tot):
-            raise ValueError("R and R_tot need to be manually assigned values.")
+            raise ValueError("R and R_tot need to be manually assigned values for the BandpassFilterMag curve_fit.")
         return (R/R_tot) / np.sqrt(1 + Q**2 * (f/f0 - f0/f)**2)
 
     # Phase: 2nd order bandpass filter. "f0" is the resonance frequency. Q the quality factor.
