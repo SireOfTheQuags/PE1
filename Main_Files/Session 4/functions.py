@@ -5,6 +5,49 @@ from tqdm.auto import tqdm
 from scipy.optimize import curve_fit
 import inspect
 
+#---------------------------------------------------------------#
+
+class Curvefits:
+
+    # MAGNITUDE: 1st order low pass RC Filter. "fc" is the cut-off frequency.
+    @staticmethod
+    def LowPassRC1stMag(f, fc):
+        return 1 / np.sqrt(1 + (f / fc) ** 2)
+
+    # PHASE: 1st order low pass RC Filter. "fc" is the cut-off frequency.
+    @staticmethod
+    def LowPassRC1stPhase(f, fc):
+        return -np.arctan2(f / fc, 1)
+
+
+    # MAGNITUDE: 1st order high pass RC Filter. "fc" is the cut-off frequency.
+    @staticmethod
+    def HighPassRC1stMag(f, fc):
+        return (f / fc) / np.sqrt(1 + (f / fc) ** 2)
+
+    # PHASE: 1st order high pass RC Filter. "fc" is the cut-off frequency.
+    @staticmethod
+    def HighPassRC1stPhase(f, fc):
+        return np.pi / 2 - np.arctan2(f / fc, 1)
+
+
+    # MAGNITUDE: 2nd order bandpass filter. "f0" is the resonance frequency. Q the quality factor.
+    # TO USE THIS FUNCTION THE R AND R_tot VARIABLES MUST BE MANUALLY CHANGED TO THEIR RESPECTIVE VALUES.
+    @staticmethod
+    def BandpassFilterMag(f, f0, Q):
+        R = np.nan
+        R_tot = np.nan
+        if np.isnan(R) or np.isnan(R_tot):
+            raise ValueError("R and R_tot need to be manually assigned values.")
+        return (R/R_tot) / np.sqrt(1 + Q**2 * (f/f0 - f0/f)**2)
+
+    # Phase: 2nd order bandpass filter. "f0" is the resonance frequency. Q the quality factor.
+    @staticmethod
+    def BandpassFilterPhase(f, f0, Q):
+        x = f / f0
+        return -np.arctan2(Q * (x - x**(-1)), 1)
+
+#---------------------------------------------------------------#
 
 class Functions:
 
@@ -506,6 +549,43 @@ class Functions:
         return dict(zip(names, zip(popt, perr)))
 
 
+    # Finds the 2 half power frequencies through linear interpolation. The frequency array used to generate
+    # the datapoints must be passed, along with all found mean magnitudes and their total error.
+    @staticmethod
+    def half_power_frequencies(f, M, sigma_M):
+
+        def interpolate_crossing(fa, fb, Ma, Mb,
+                                sigma_Ma, sigma_Mb,
+                                M_half, sigma_M_half):
+
+            delta_M = Mb - Ma
+            delta_f = fb - fa
+
+            t = (M_half - Ma) / delta_M
+
+            f_cross = fa + t * delta_f
+
+            df_dMhalf = delta_f / delta_M
+            df_dMa = delta_f * (M_half - Mb) / delta_M**2
+            df_dMb = -delta_f * (M_half - Ma) / delta_M**2
+
+            sigma_f = np.sqrt(
+                (df_dMhalf * sigma_M_half)**2
+                + (df_dMa * sigma_Ma)**2
+                + (df_dMb * sigma_Mb)**2
+            )
+
+            return f_cross, sigma_f
+
+        i = np.argmax(M)
+        M_half, s_half = M[i] / np.sqrt(2), sigma_M[i] / np.sqrt(2)
+        il = np.where(M[:i] < M_half)[0][-1]            # last point below M_half left of the peak
+        ir = i + 1 + np.where(M[i+1:] < M_half)[0][0]   # first point below M_half right of the peak
+        f1, s1 = interpolate_crossing(f[il], f[il+1], M[il], M[il+1], sigma_M[il], sigma_M[il+1], M_half, s_half)
+        f2, s2 = interpolate_crossing(f[ir-1], f[ir], M[ir-1], M[ir], sigma_M[ir-1], sigma_M[ir], M_half, s_half)
+        return f1, s1, f2, s2
+
+
     # Plot a signal in either the time or frequency domain.
     @staticmethod
     def plot(signal, fs, domain="time",
@@ -577,5 +657,4 @@ class Functions:
 
         ax.grid(True)
         plt.show()
-
 
