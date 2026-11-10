@@ -237,7 +237,7 @@ class Functions:
 
     # Measures the phase offset between two DAQ input channels at each frequency.
     # Both channels must measure the same signal, with the circuit bypassed.
-    # Uses the same frequency settings (freq_amount, min_freq, max_freq, scale)
+    # Uses the same frequency settings (freq_amount, min_freq, max_freq, man_freq, scale)
     # as calculate_power so that the calibration offsets match the measurement
     # frequencies and order. Also use the same fs, duration, df, and normalize
     # settings for consistent phase extraction. The DAQ sample rate must match fs.
@@ -373,7 +373,7 @@ class Functions:
         if frequencies.ndim != 1 or len(frequencies) < 2:
             raise ValueError("At least two frequencies are required.")
         if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0):
-            raise ValueError("Frequencies must be finite and positive.")
+            raise ValueError("Frequencies must be finite and/or positive.")
         if ydata.ndim != 1 or len(ydata) != len(frequencies):
             raise ValueError("ydata must match the frequency array.")
         if not np.all(np.isfinite(ydata)):
@@ -420,7 +420,7 @@ class Functions:
             if fit_freqs is None:
                 raise ValueError("fit_freqs must be provided when plotting fits.")
         if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0):
-            raise ValueError("Frequencies must be finite and positive.")
+            raise ValueError("Frequencies must be finite and/or positive.")
         if not all(np.all(np.isfinite(arr)) for arr in (mean_magnitude, mean_phase, mag_total_error, phase_total_error_rad)):
             raise ValueError("Experimental arrays must contain only finite values.")
         if np.any(mag_total_error < 0) or np.any(phase_total_error_rad < 0):

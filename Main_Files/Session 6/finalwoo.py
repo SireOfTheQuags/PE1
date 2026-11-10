@@ -40,11 +40,11 @@ scale1 = 'log'      # Frequency spacing: 'log' or 'linear'
 man_freqs = []      # Optional manually specified frequencies [Hz]
 calibration_amount = 2  # Number of phase calibration measurements
 measurement_amount = 2  # Number of circuit measurements
-fit_type_mag = functions.FitCurves.BandpassFilterMag
-fit_type_phase = functions.FitCurves.BandpassFilterPhase
-
+fit_type_mag = functions.FitCurves.BandpassFilterMag # Select the fit formula for the magnitude
+fit_type_phase = functions.FitCurves.BandpassFilterPhase # Select the fit formula for the phase
 
 daq.set_sample_rate(fs)
+
 # %%
 #--------------------------------------------------#
 # Phase Calibration Calculation
