@@ -45,8 +45,8 @@ measurement_amount = 2  # Number of circuit measurements. NEEDS TO BE MINIMUM OF
 
 # Curvefit settings
     #! TO SELECT THE KIND OF FIT YOU WANT, YOU HAVE TO CHANGE IT IN THE "Creating the fits" SECTION DOWN BELOW !#
-ini_guess_mag = [] # Initial guess for magnitude fit
-ini_guess_phase = [] # Initial guess for phase fit
+ini_guess_mag = [] # Initial guess for magnitude fit. Change to "None" to not pass anything.
+ini_guess_phase = [] # Initial guess for phase fit. Change to "None" to not pass anything.
 
 daq.set_sample_rate(fs)
 
@@ -102,7 +102,7 @@ mean_phase = np.angle(np.mean(np.exp(1j * phase_runs), axis=0))
 
 # %%
 #--------------------------------------------------#
-# Error Calculations
+# Error calculations based solely on repeat measurements
 
 std_magnitude = np.std(magnitude_runs, axis=0, ddof=1)
 sem_magnitude = std_magnitude / np.sqrt(measurement_amount)
