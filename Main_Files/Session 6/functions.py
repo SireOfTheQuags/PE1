@@ -104,7 +104,7 @@ class Functions:
         return fft_val, frequencies
 
 
-    # Calculates the signal power around a specific frequency. If you want a single
+    # Calculates the magnitude and phase part of the transfer function. If you want a single
     # frequency, just make min_freq = max_freq and freq_amount = 1.
     @staticmethod   
     def calculate_power(daq, fs, freq_amount, min_freq, 

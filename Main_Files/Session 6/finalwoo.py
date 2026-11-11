@@ -3,6 +3,7 @@ import mydaq
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import importlib
 daq = mydaq.MyDAQ()
 
 ## MAKE SURE THAT HE CALIBRATION IS WITHOUT THE CIRCUIT
@@ -10,13 +11,11 @@ daq = mydaq.MyDAQ()
 # CONFIDENTLY: 12 IS FIRST ORDER LOW PASS
 #--------------------------------------------------#
 # Channel settings
-
 initial_input_channel = 'myDAQ1/ai0'
 post_input_channel = 'myDAQ1/ai1'
 output_channel = 'myDAQ1/ao0'
 
 # Component settings
-
 L = 100e-3       # Coil inductance [H]
 dL = np.nan      # Coil inductance uncertainty [H]
 C = 100e-9       # Capacitor capacitance [F]
@@ -26,21 +25,28 @@ dR = np.nan      # External resistance uncertainty [Ohm]
 rL = 1           # Coil resistance [Ohm]
 drL = dR         # Coil resistance uncertainty [Ohm]
 Rt = R + rL      # Total resistance circuit [Ohm]
+
+# Some short calculations
 fth0 = 1 / (2 * np.pi * np.sqrt(L * C))  # Theoretical resonance frequency [Hz]
 Qth = (1 / Rt) * np.sqrt(L / C)          # Theoretical quality factor
+
+# Measurement settings
 fs = 100000      # Sampling frequency [samples/s]
 dur = 0.5        # Recording duration [s]
 ampli = 0.5      # Input amplitude [V]
-df = 3           # Frequency window [Hz]
+df = 3           # Frequency window for integration [Hz]
 min_freq = 20       # Minimum measurement frequency [Hz]
 max_freq = 40000    # Maximum measurement frequency [Hz]
 freq_amount = 40    # Number of measurement frequencies
 scale1 = 'log'      # Frequency spacing: 'log' or 'linear'
 man_freqs = []      # Optional manually specified frequencies [Hz]
-calibration_amount = 2  # Number of phase calibration measurements
-measurement_amount = 2  # Number of circuit measurements
-fit_type_mag = functions.FitCurves.BandpassFilterMag # Select the fit formula for the magnitude
-fit_type_phase = functions.FitCurves.BandpassFilterPhase # Select the fit formula for the phase
+calibration_amount = 2  # Number of phase calibration measurements. NEEDS TO BE MINIMUM OF 2, OTHERWISE DIVISION BY ZERO HAPPENS.
+measurement_amount = 2  # Number of circuit measurements. NEEDS TO BE MINIMUM OF 2, OTHERWISE DIVISION BY ZERO HAPPENS.
+
+# Curvefit settings
+    #! TO SELECT THE KIND OF FIT YOU WANT, YOU HAVE TO CHANGE IT IN THE "Creating the fits" SECTION DOWN BELOW !#
+ini_guess_mag = [] # Initial guess for magnitude fit
+ini_guess_phase = [] # Initial guess for phase fit
 
 daq.set_sample_rate(fs)
 
@@ -116,10 +122,16 @@ sem_phase_total = np.sqrt(sem_phase**2 + sem_calibration**2)
 #--------------------------------------------------#
 # Creating the fits
 
+# Need to reload because otherwise changes for R and Rtot won't be reflected. SELECT THE FIT TYPE HERE.
+importlib.reload(functions)
+fit_type_mag = functions.FitCurves.BandpassFilterMag
+fit_type_phase = functions.FitCurves.BandpassFilterPhase
+
+# Here the fits are created
 mag_fit, fit_freqs, mag_popt, mag_pcov = functions.Functions.fit_bode_func(frequencies, fit_type_mag,
-                                            mean_magnitude, [fth0, Qth], error = sem_mag_total)
+                                            mean_magnitude, ini_guess_mag, error = sem_mag_total)
 phase_fit, fit_freqs, phase_popt, phase_pcov = functions.Functions.fit_bode_func(frequencies, fit_type_phase,
-                                            mean_phase, [fth0, Qth], unwrap_phase = True, error = sem_phase_total)
+                                            mean_phase, ini_guess_phase, unwrap_phase = True, error = sem_phase_total)
 
 # %% 
 #--------------------------------------------------#
