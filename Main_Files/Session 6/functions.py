@@ -49,6 +49,23 @@ class FitCurves:
         return np.pi / 2 - np.arctan2(f / fc, 1)
 
 
+    # MAGNITUDE: 2nd order high-pass RLC filter.
+    # ! Measure over the inductor for high-pass !
+    # f0 is the resonance frequency.
+    # Q is the quality factor.
+    @staticmethod
+    def HighPassRLC2ndMag(f, f0, Q):
+        x = f / f0
+        return x**2 / np.sqrt((1 - x**2)**2 + (x / Q)**2)
+
+    # PHASE: 2nd order high-pass RLC filter.
+    # Goes from +180 deg at low f, through +90 deg at f0, to 0 deg at high f.
+    @staticmethod
+    def HighPassRLC2ndPhase(f, f0, Q):
+        x = f / f0
+        return np.pi - np.arctan2(x / Q, 1 - x**2)
+
+
     # MAGNITUDE: 2nd order RLC bandpass filter. "f0" is the resonance frequency. Q the quality factor.
     # ! Measure over the resistance for bandpass !
     # TO USE THIS FUNCTION, THE R AND R_tot VARIABLES MUST BE MANUALLY CHANGED TO THEIR RESPECTIVE VALUES.
@@ -61,12 +78,43 @@ class FitCurves:
             raise ValueError("R and R_tot need to be manually assigned values for the BandpassFilterMag curve_fit.")
         return (R/R_tot) / np.sqrt(1 + Q**2 * (f/f0 - f0/f)**2)
 
+    # MAGNITUDE: 2nd order bandpass for the BLACK BOX (R and R_tot unknown).
+    # Peak gain is assumed to be exactly 1 (A = R/R_tot = 1), so only f0 and Q are fitted.
+    # f0 is the resonance frequency.
+    # Q is the quality factor.
+    @staticmethod
+    def BandpassBlackBoxMag(f, f0, Q):
+        return 1 / np.sqrt(1 + Q**2 * (f/f0 - f0/f)**2)
+
+    # MAGNITUDE: 2nd order bandpass for the BLACK BOX with free peak gain A.
+    # Only use this if the A = 1 fit clearly misses the measured peak height.
+    @staticmethod
+    def BandpassBlackBoxMagFreeA(f, f0, Q, A):
+        return A / np.sqrt(1 + Q**2 * (f/f0 - f0/f)**2)
+
     # Phase: 2nd order bandpass filter. "f0" is the resonance frequency. Q the quality factor.
     @staticmethod
     def BandpassFilterPhase(f, f0, Q):
         x = f / f0
         return -np.arctan2(Q * (x - x**(-1)), 1)
 
+
+    # MAGNITUDE: 2nd order RLC bandstop filter.
+    # f0 is the notch frequency.
+    # Q is the quality factor.
+    @staticmethod
+    def BandstopFilterMag(f, f0, Q):
+        x = f / f0
+        y = Q * (x - 1/x)
+        return np.abs(y) / np.sqrt(1 + y**2)
+
+    # PHASE: 2nd order RLC bandstop filter.
+    @staticmethod
+    def BandstopFilterPhase(f, f0, Q):
+        x = f / f0
+        y = Q * (x - 1/x)
+        return np.arctan2(y, y**2)
+    
 #---------------------------------------------------------------#
 
 class Functions:
@@ -569,41 +617,96 @@ class Functions:
         return dict(zip(names, zip(popt, perr)))
 
 
-    # Finds the 2 half power frequencies through linear interpolation. The frequency array used to generate
-    # the datapoints must be passed, along with all found mean magnitudes and their total error.
+    # Finds the 2 half power frequencies through linear interpolation.
+    # f, M, sigma_M: measurement frequencies, mean magnitudes, and their total errors.
+    # filter_type: "bandpass" (reference = peak gain, crossings around the maximum)
+    #              "bandstop" (reference = passband gain, crossings around the minimum)
+    # M_ref, sigma_M_ref: optional manual reference gain (the level that gets divided by sqrt(2)).
+    #   Default is the maximum of M for both types. For a bandstop measured over L+C
+    #   you can pass M_ref=1.0 (sigma_M_ref=0) if the plateau gain is known to be 1.
+    # log_interp: interpolate in ln(f) instead of f (better for log-spaced data).
+    # Returns f1, s1, f2, s2 in Hz (f1 < f2).
     @staticmethod
-    def half_power_frequencies(f, M, sigma_M):
+    def half_power_frequencies(f, M, sigma_M, filter_type="bandpass",
+                               M_ref=None, sigma_M_ref=0.0, log_interp=True):
 
-        def interpolate_crossing(fa, fb, Ma, Mb,
-                                sigma_Ma, sigma_Mb,
-                                M_half, sigma_M_half):
+        f = np.asarray(f, dtype=float)
+        M = np.asarray(M, dtype=float)
+        sigma_M = np.asarray(sigma_M, dtype=float)
+
+        if filter_type not in ("bandpass", "bandstop"):
+            raise ValueError("filter_type must be 'bandpass' or 'bandstop'.")
+
+        def interpolate_crossing(xa, xb, Ma, Mb,
+                                 sigma_Ma, sigma_Mb,
+                                 M_half, sigma_M_half):
 
             delta_M = Mb - Ma
-            delta_f = fb - fa
+            delta_x = xb - xa
 
             t = (M_half - Ma) / delta_M
+            x_cross = xa + t * delta_x
 
-            f_cross = fa + t * delta_f
+            dx_dMhalf = delta_x / delta_M
+            dx_dMa = delta_x * (M_half - Mb) / delta_M**2
+            dx_dMb = -delta_x * (M_half - Ma) / delta_M**2
 
-            df_dMhalf = delta_f / delta_M
-            df_dMa = delta_f * (M_half - Mb) / delta_M**2
-            df_dMb = -delta_f * (M_half - Ma) / delta_M**2
-
-            sigma_f = np.sqrt(
-                (df_dMhalf * sigma_M_half)**2
-                + (df_dMa * sigma_Ma)**2
-                + (df_dMb * sigma_Mb)**2
+            sigma_x = np.sqrt(
+                (dx_dMhalf * sigma_M_half)**2
+                + (dx_dMa * sigma_Ma)**2
+                + (dx_dMb * sigma_Mb)**2
             )
+            return x_cross, sigma_x
 
-            return f_cross, sigma_f
+        # Reference gain
+        j = np.argmax(M)
+        if M_ref is None:
+            M_ref, sigma_M_ref = M[j], sigma_M[j]
+        M_half = M_ref / np.sqrt(2)
+        s_half = sigma_M_ref / np.sqrt(2)
 
-        i = np.argmax(M)
-        M_half, s_half = M[i] / np.sqrt(2), sigma_M[i] / np.sqrt(2)
-        il = np.where(M[:i] < M_half)[0][-1]            # last point below M_half left of the peak
-        ir = i + 1 + np.where(M[i+1:] < M_half)[0][0]   # first point below M_half right of the peak
-        f1, s1 = interpolate_crossing(f[il], f[il+1], M[il], M[il+1], sigma_M[il], sigma_M[il+1], M_half, s_half)
-        f2, s2 = interpolate_crossing(f[ir-1], f[ir], M[ir-1], M[ir], sigma_M[ir-1], sigma_M[ir], M_half, s_half)
-        return f1, s1, f2, s2
+        # Centre of the peak/notch, and which side of M_half counts as "outside" the band
+        if filter_type == "bandpass":
+            i = np.argmax(M)
+            outside = M < M_half
+        else:
+            i = np.argmin(M)
+            outside = M > M_half
+
+        left = np.where(outside[:i])[0]
+        right = np.where(outside[i+1:])[0]
+        if len(left) == 0 or len(right) == 0:
+            raise ValueError(
+                "Could not find a half-power crossing on both sides of the "
+                f"{'peak' if filter_type == 'bandpass' else 'notch'}. "
+                "Measure a wider frequency range or add points around f0."
+            )
+        il = left[-1]               # last 'outside' point left of the centre
+        ir = i + 1 + right[0]       # first 'outside' point right of the centre
+
+        x = np.log(f) if log_interp else f
+
+        x1, sx1 = interpolate_crossing(x[il], x[il+1], M[il], M[il+1],
+                                       sigma_M[il], sigma_M[il+1], M_half, s_half)
+        x2, sx2 = interpolate_crossing(x[ir-1], x[ir], M[ir-1], M[ir],
+                                       sigma_M[ir-1], sigma_M[ir], M_half, s_half)
+
+        if log_interp:
+            f1, f2 = np.exp(x1), np.exp(x2)
+            return f1, f1 * sx1, f2, f2 * sx2
+        return x1, sx1, x2, sx2
+
+
+    # RMS difference between measured data and a fitted model.
+    # Phase residuals are wrapped to (-pi, pi] so 2*pi jumps don't count as errors.
+    # Returns RMS_M (linear) and RMS_phi (degrees).
+    @staticmethod
+    def rms_vs_model(f, M, phi, mag_fit_func, mag_popt, phase_fit_func, phase_popt):
+        f = np.asarray(f, dtype=float)
+        rms_M = np.sqrt(np.mean((np.asarray(M) - mag_fit_func(f, *mag_popt))**2))
+        r = np.angle(np.exp(1j * (np.asarray(phi) - phase_fit_func(f, *phase_popt))))
+        rms_phi = np.degrees(np.sqrt(np.mean(r**2)))
+        return rms_M, rms_phi
 
 
     # Plot a signal in either the time or frequency domain.
@@ -677,4 +780,5 @@ class Functions:
 
         ax.grid(True)
         plt.show()
+
 

@@ -1,9 +1,8 @@
 import functions
 import mydaq
-import matplotlib.pyplot as plt
 import numpy as np
-import time
 import importlib
+import matplotlib.pyplot as plt
 daq = mydaq.MyDAQ()
 
 ## MAKE SURE THAT HE CALIBRATION IS WITHOUT THE CIRCUIT
@@ -26,9 +25,13 @@ rL = 1           # Coil resistance [Ohm]
 drL = dR         # Coil resistance uncertainty [Ohm]
 Rt = R + rL      # Total resistance circuit [Ohm]
 
-# Some short calculations
-fth0 = 1 / (2 * np.pi * np.sqrt(L * C))  # Theoretical resonance frequency [Hz]
-Qth = (1 / Rt) * np.sqrt(L / C)          # Theoretical quality factor
+R_rc = 10e3      # External resistance in RC_low-pass [Ohm]
+C_rc = 9e-9      # Capacitor capacitance in RC_low-pass [F]
+
+# Theoretical parameters (computed once, pick the relevant ones per filter)
+fc_rc   = 1 / (2 * np.pi * R_rc * C_rc)      # -3 dB cutoff, 1st order RC low/high pass [Hz]
+fth0 = 1 / (2 * np.pi * np.sqrt(L * C))      # Resonance / notch frequency, any 2nd order RLC [Hz]
+Qth  = (1 / Rt) * np.sqrt(L / C)             # Quality factor, any 2nd order RLC
 
 # Measurement settings
 fs = 100000      # Sampling frequency [samples/s]
@@ -47,6 +50,8 @@ measurement_amount = 2  # Number of circuit measurements. NEEDS TO BE MINIMUM OF
     #! TO SELECT THE KIND OF FIT YOU WANT, YOU HAVE TO CHANGE IT IN THE "Creating the fits" SECTION DOWN BELOW !#
 ini_guess_mag = [] # Initial guess for magnitude fit. Change to "None" to not pass anything.
 ini_guess_phase = [] # Initial guess for phase fit. Change to "None" to not pass anything.
+    #! FOR THE BLACK BOX THE "fth0" and "Qth" GUESSES DON'T WORK BECAUSE WE CAN'T KNOW 'L' and 'C'. JUST MAKE A GENERIC GUESS, OR NONE.
+half_power_type = "bandpass" # Set this to either "bandpass" or "bandstop" depending on the one it is. This is used to find the half-power frequencies. Ignore if different filter.
 
 daq.set_sample_rate(fs)
 
@@ -124,7 +129,7 @@ sem_phase_total = np.sqrt(sem_phase**2 + sem_calibration**2)
 
 # Need to reload because otherwise changes for R and Rtot won't be reflected. SELECT THE FIT TYPE HERE.
 importlib.reload(functions)
-fit_type_mag = functions.FitCurves.BandpassFilterMag
+fit_type_mag = functions.FitCurves.BandpassBlackBoxMag
 fit_type_phase = functions.FitCurves.BandpassFilterPhase
 
 # Here the fits are created
@@ -154,10 +159,10 @@ values = functions.Functions.bode_plot(frequencies, mean_magnitude, mean_phase, 
 
 # %%
 #--------------------------------------------------#
-# Further Analysis
+# Bandpass and Bandstop special stuff
 
 # finding f1 and f2
-f1 , s1, f2, s2 = functions.Functions.half_power_frequencies(frequencies, mean_magnitude, sem_mag_total)
+f1, s1, f2, s2 = functions.Functions.half_power_frequencies(frequencies, mean_magnitude, sem_mag_total, filter_type=half_power_type)
 print(f"Rising half power freq 'f1' is: {f1} ± {s1:.4g}")
 print(f"Falling half power freq 'f2' is: {f2} ± {s2:.4g}")
 
@@ -175,21 +180,98 @@ print(f"Q from bandwidth: {Qbw:.6g} ± {Qbw_error:.4g}")
 
 # %%
 #--------------------------------------------------#
-# Acceptance tests: RMS difference between data and theory
+# Acceptance: RMS difference between blackbox and theory
 
-w = 2 * np.pi * frequencies
-X = w * L - 1 / (w * C)                      # net reactance
-
-M_th   = R / np.sqrt(Rt**2 + X**2)           # theoretical magnitude
-phi_th = -np.arctan2(X, Rt)                  # theoretical phase (rad)
-
-# Magnitude
-rms_M = np.sqrt(np.mean((mean_magnitude - M_th)**2))
-
-# Phase
-phase_diff = np.angle(np.exp(1j * (mean_phase - phi_th)))
-rms_phi = np.sqrt(np.mean(phase_diff**2))
-rms_phi_deg = np.degrees(rms_phi)
+rms_M, rms_phi_deg = functions.Functions.rms_vs_model(
+    frequencies, mean_magnitude, mean_phase,
+    fit_type_mag, mag_popt, fit_type_phase, phase_popt)
 
 print(f"RMS_M   = {rms_M:.6g}   (limit 0.1)")
 print(f"RMS_phi = {rms_phi_deg:.6g} deg   (limit 10 deg)")
+
+
+
+
+# ----------------------------------#
+# ----------------------------------#
+# ----------------------------------#
+# ----------------------------------#
+# ----------------------------------#
+# %%
+# --------------- PART 2 -------------------#
+# RC low-pass in series with the black box
+# DONT RERUN THE PART 1 CELLS ONCE YOURE HERE OR STUFF BREAKS
+
+def measure_config():
+    mag_runs, phase_runs = [], []
+    for _ in range(measurement_amount):
+        m, p, fr = functions.Functions.calculate_power(
+            daq, fs, freq_amount, min_freq, max_freq, ampli, dur, df,
+            calibration_mean, scale=scale1, man_freqs=man_freqs,
+            initial_input_channel=initial_input_channel,
+            post_input_channel=post_input_channel,
+            output_channel=output_channel)
+        mag_runs.append(m)
+        phase_runs.append(p)
+    mag_runs, phase_runs = np.asarray(mag_runs), np.asarray(phase_runs)
+
+    M = mag_runs.mean(axis=0)
+    phi = np.angle(np.mean(np.exp(1j * phase_runs), axis=0))
+    sM = mag_runs.std(axis=0, ddof=1) / np.sqrt(measurement_amount)
+    dev = np.angle(np.exp(1j * (phase_runs - phi)))
+    sphi = np.sqrt((dev.std(axis=0, ddof=1) / np.sqrt(measurement_amount))**2
+                   + sem_calibration**2)
+    return dict(f=fr, M=M, phi=phi, sM=sM, sphi=sphi)
+
+# The black box alone is what you already measured above
+data = {"BB": dict(f=frequencies, M=mean_magnitude, phi=mean_phase,
+                   sM=sem_mag_total, sphi=sem_phase_total)}
+
+# %%
+# Measurements (run these one at a time and rewire in between)
+input("Connect ONLY the RC filter, then press Enter"); data["RC"] = measure_config()
+# %%
+input("Connect input -> BLACK BOX -> RC -> output, then press Enter"); data["BB>RC"] = measure_config()
+# %%
+input("Connect input -> RC -> BLACK BOX -> output, then press Enter"); data["RC>BB"] = measure_config()
+
+# %%
+# Prediction: multiply the magnitudes, add the phases
+a, b = data["BB"], data["RC"]
+data["pred"] = dict(
+    f=a["f"],
+    M=a["M"] * b["M"],
+    phi=np.angle(np.exp(1j * (a["phi"] + b["phi"]))),
+    sM=a["M"] * b["M"] * np.sqrt((a["sM"]/a["M"])**2 + (b["sM"]/b["M"])**2),
+    sphi=np.sqrt(a["sphi"]**2 + b["sphi"]**2))
+
+# %%
+# Comparison (the RMS formulas from your prep, Eq. 22)
+def rms_compare(x, y):
+    rM = np.sqrt(np.mean((x["M"] - y["M"])**2))
+    d = np.angle(np.exp(1j * (x["phi"] - y["phi"])))
+    return rM, np.degrees(np.sqrt(np.mean(d**2)))
+
+for name, (x, y) in {"prediction vs BB>RC": ("pred", "BB>RC"),
+                     "prediction vs RC>BB": ("pred", "RC>BB"),
+                     "BB>RC vs RC>BB":      ("BB>RC", "RC>BB")}.items():
+    rM, rP = rms_compare(data[x], data[y])
+    verdict = "ACCEPT" if (rM < 0.1 and rP < 10) else "REJECT"
+    print(f"{name:22s} RMS_M = {rM:.4g} (limit 0.1)   RMS_phi = {rP:.4g} deg (limit 10)   {verdict}")
+
+# %%
+# Plot: both series orders on top of the prediction
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
+for key, lab in [("BB>RC", "BB -> RC"), ("RC>BB", "RC -> BB"), ("pred", "Prediction")]:
+    d = data[key]
+    ax1.errorbar(d["f"], 20*np.log10(d["M"]), yerr=(20/np.log(10))*d["sM"]/d["M"],
+                 fmt='o', ms=3, capsize=2, label=lab)
+    ax2.errorbar(d["f"], np.degrees(np.unwrap(d["phi"])), yerr=np.degrees(d["sphi"]),
+                 fmt='o', ms=3, capsize=2, label=lab)
+for ax, yl in ((ax1, "Magnitude (dB)"), (ax2, "Phase (degrees)")):
+    ax.set_xscale('log'); ax.set_xlabel("Frequency (Hz)"); ax.set_ylabel(yl)
+    ax.grid(True, which='both'); ax.legend()
+ax2.set_title('Experimental Transfer Function Phase')
+ax1.set_title('Experimental Transfer Function Magnitude')
+plt.tight_layout()
+plt.show()
